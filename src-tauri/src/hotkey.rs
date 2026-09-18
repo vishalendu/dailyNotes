@@ -90,8 +90,8 @@ pub fn setup(app: &tauri::AppHandle) {
     });
 }
 #[tauri::command]
-pub async fn hotkey_status(state: tauri::State<'_, Hotkey>) -> Status {
-    state.status.lock().unwrap().clone()
+pub async fn hotkey_status(state: tauri::State<'_, Hotkey>) -> Result<Status> {
+    Ok(state.status.lock().map_err(err)?.clone())
 }
 #[tauri::command]
 pub async fn set_hotkey(shortcut: String, app: tauri::AppHandle) -> Result<Status> {
