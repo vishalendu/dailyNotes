@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Main window: native file pickers and window lifecycle only.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "opener:allow-open-url"
+  ]
+}

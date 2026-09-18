@@ -1,0 +1,15 @@
+BEGIN;
+CREATE TABLE notes(id INTEGER PRIMARY KEY,day TEXT NOT NULL UNIQUE,body TEXT NOT NULL,revision INTEGER NOT NULL,is_archived INTEGER NOT NULL DEFAULT 0 CHECK(is_archived IN (0,1)),created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE INDEX notes_scope_date ON notes(is_archived,day);
+CREATE TABLE images(id INTEGER PRIMARY KEY,sha256 TEXT NOT NULL UNIQUE,mime TEXT NOT NULL,width INTEGER NOT NULL,height INTEGER NOT NULL,bytes BLOB NOT NULL);
+CREATE TABLE note_images(note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,offset INTEGER NOT NULL,image_id INTEGER NOT NULL REFERENCES images(id),PRIMARY KEY(note_id,offset));
+CREATE VIRTUAL TABLE notes_fts USING fts5(body,content='notes',content_rowid='id',tokenize='unicode61');
+CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN INSERT INTO notes_fts(rowid,body) VALUES(new.id,new.body); END;
+CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN INSERT INTO notes_fts(notes_fts,rowid,body) VALUES('delete',old.id,old.body); END;
+CREATE TRIGGER notes_au AFTER UPDATE OF body ON notes BEGIN INSERT INTO notes_fts(notes_fts,rowid,body) VALUES('delete',old.id,old.body); INSERT INTO notes_fts(rowid,body) VALUES(new.id,new.body); END;
+CREATE TABLE chunks(id INTEGER PRIMARY KEY,note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,revision INTEGER NOT NULL,offset INTEGER NOT NULL,text TEXT NOT NULL,vector BLOB NOT NULL CHECK(length(vector)=1536));
+CREATE INDEX chunks_note ON chunks(note_id);
+CREATE TABLE pending(note_id INTEGER PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,since INTEGER NOT NULL);
+CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+INSERT INTO settings VALUES('archive_days','90');
+COMMIT;

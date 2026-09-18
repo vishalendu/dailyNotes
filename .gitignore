@@ -1,0 +1,27 @@
+# Downloaded model assets and local conversion output.
+/models/
+*.mlmodel
+*.mlpackage/
+*.mlmodelc/
+*.onnx
+*.safetensors
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.DS_Store
+*.sqlite
+*.sqlite.lock
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+# Generated mobile icons are unused by this desktop app.
+src-tauri/icons/android/
+src-tauri/icons/ios/
+.fastembed_cache/
+test-results/
+playwright-report/
