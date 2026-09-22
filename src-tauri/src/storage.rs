@@ -9,13 +9,15 @@ pub fn err(e: impl std::fmt::Display) -> String {
 }
 const APP_ID: i64 = 0x444e4f54;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Attachment {
     pub offset: usize,
     pub id: i64,
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Note {
+    #[serde(default)]
+    pub content: Option<serde_json::Value>,
     pub day: String,
     pub body: String,
     pub revision: i64,
@@ -98,7 +100,7 @@ impl Store {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(err)?;
-        if exists && (app != APP_ID || !(1..=2).contains(&version)) {
+        if exists && (app != APP_ID || !(1..=4).contains(&version)) {
             return Err("This is not a supported Daily Notes library. Nothing was changed.".into());
         }
         conn.busy_timeout(Duration::from_secs(3)).map_err(err)?;
@@ -135,7 +137,7 @@ impl Store {
                         "Migration backup already exists; reopen the library to retry.".into(),
                     );
                 }
-                conn.backup("main", &backup, None).map_err(err)?;
+                backup_connection(&conn, &backup)?;
             }
             conn.execute_batch("BEGIN IMMEDIATE;
                 CREATE TABLE bookmarks(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE);
@@ -143,6 +145,28 @@ impl Store {
                 CREATE INDEX page_bookmarks_by_bookmark ON page_bookmarks(bookmark_id,day);
                 PRAGMA user_version=2;
                 COMMIT;").map_err(err)?;
+        }
+        if version < 3 {
+            if exists {
+                let backup =
+                    path.with_extension(format!("pre-v3-{}.sqlite", Utc::now().timestamp_millis()));
+                if backup.exists() {
+                    return Err("Migration backup exists; reopen to retry.".into());
+                }
+                backup_connection(&conn, &backup)?;
+            }
+            conn.execute_batch("BEGIN IMMEDIATE; ALTER TABLE notes ADD COLUMN content_blob BLOB; ALTER TABLE notes ADD COLUMN content_version INTEGER; PRAGMA user_version=3; COMMIT;").map_err(err)?;
+        }
+        if version < 4 {
+            if exists {
+                let backup =
+                    path.with_extension(format!("pre-v4-{}.sqlite", Utc::now().timestamp_millis()));
+                if backup.exists() {
+                    return Err("Migration backup exists; reopen to retry.".into());
+                }
+                backup_connection(&conn, &backup)?;
+            }
+            conn.pragma_update(None, "user_version", 4).map_err(err)?;
         }
         Ok(Self { conn })
     }
@@ -173,6 +197,7 @@ impl Store {
                 [day],
                 |r| {
                     Ok(Note {
+                        content: None,
                         day: day.into(),
                         body: r.get(0)?,
                         revision: r.get(1)?,
@@ -185,6 +210,7 @@ impl Store {
             .optional()
             .map_err(err)?
             .unwrap_or(Note {
+                content: None,
                 day: day.into(),
                 body: String::new(),
                 revision: 0,
@@ -203,10 +229,36 @@ impl Store {
             .map_err(err)?
             .collect::<std::result::Result<_, _>>()
             .map_err(err)?;
+        let rich: Option<(Option<Vec<u8>>, Option<i64>)> = self
+            .conn
+            .query_row(
+                "SELECT content_blob,content_version FROM notes WHERE day=?1",
+                [day],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(err)?;
+        if let Some((Some(blob), version)) = rich {
+            let doc = crate::document::decode(&blob, version.unwrap_or(0))?;
+            let (body, images) = crate::document::project(&doc)?;
+            if body != note.body || images != note.attachments {
+                return Err("Stored document and search text disagree; restore a backup.".into());
+            }
+            note.content = Some(doc);
+        }
         Ok(note)
     }
     pub fn save(&mut self, note: &Note) -> Result<Note> {
         valid_day(&note.day)?;
+        let blob = if let Some(doc) = &note.content {
+            let (body, images) = crate::document::project(doc)?;
+            if body != note.body || images != note.attachments {
+                return Err("Document projection mismatch; note was not changed.".into());
+            }
+            Some(crate::document::encode(doc)?)
+        } else {
+            None
+        };
         if note.body.len() > 5 * 1024 * 1024 {
             return Err("A daily note can contain up to 5 MiB of text.".into());
         }
@@ -221,18 +273,21 @@ impl Store {
             return Err("An image reference is missing; note was not changed.".into());
         }
         let tx = self.conn.transaction().map_err(err)?;
-        let previous: Option<(i64, String)> = tx
+        let previous: Option<(i64, String, bool)> = tx
             .query_row(
-                "SELECT revision,body FROM notes WHERE day=?1",
+                "SELECT revision,body,content_blob IS NOT NULL FROM notes WHERE day=?1",
                 [&note.day],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .map_err(err)?;
         if previous.as_ref().map(|x| x.0).unwrap_or(0) != note.revision {
             return Err("This note changed elsewhere. Reload before saving.".into());
         }
-        if previous.is_none() && note.body.is_empty() {
+        if previous.as_ref().is_some_and(|p| p.2) && note.content.is_none() {
+            return Err("Structured content is missing; refusing to discard formatting.".into());
+        }
+        if previous.is_none() && note.body.is_empty() && note.content.is_none() {
             return Ok(note.clone());
         }
         let now = Utc::now().to_rfc3339();
@@ -242,6 +297,19 @@ impl Store {
                 r.get(0)
             })
             .map_err(err)?;
+        tx.execute(
+            "UPDATE notes SET content_blob=?1,content_version=?2 WHERE id=?3",
+            params![
+                blob,
+                if note.content.is_some() {
+                    Some(2)
+                } else {
+                    None::<i64>
+                },
+                id
+            ],
+        )
+        .map_err(err)?;
         tx.execute("DELETE FROM note_images WHERE note_id=?1", [id])
             .map_err(err)?;
         for a in &note.attachments {
@@ -251,13 +319,21 @@ impl Store {
             )
             .map_err(err)?;
         }
-        tx.execute("DELETE FROM chunks WHERE note_id=?1", [id])
+        if previous.as_ref().is_some_and(|p| p.1 == note.body) {
+            tx.execute(
+                "UPDATE chunks SET revision=?1 WHERE note_id=?2",
+                params![note.revision + 1, id],
+            )
             .map_err(err)?;
-        tx.execute(
-            "INSERT INTO pending(note_id,since) VALUES(?1,?2) ON CONFLICT(note_id) DO NOTHING",
-            params![id, Utc::now().timestamp()],
-        )
-        .map_err(err)?;
+        } else {
+            tx.execute("DELETE FROM chunks WHERE note_id=?1", [id])
+                .map_err(err)?;
+            tx.execute(
+                "INSERT INTO pending(note_id,since) VALUES(?1,?2) ON CONFLICT(note_id) DO NOTHING",
+                params![id, Utc::now().timestamp()],
+            )
+            .map_err(err)?;
+        }
         tx.commit().map_err(err)?;
         self.note(&note.day)
     }
@@ -411,26 +487,7 @@ impl Store {
         Ok(result)
     }
     pub fn backup(&self, path: &Path) -> Result<()> {
-        if path.exists() {
-            return Err("Destination already exists. Choose a new filename.".into());
-        }
-        self.conn.backup("main", path, None).map_err(err)?;
-        let dest = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(err)?;
-        let check: String = dest
-            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
-            .map_err(err)?;
-        let broken: bool = dest
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
-                [],
-                |r| r.get(0),
-            )
-            .map_err(err)?;
-        if check != "ok" || broken {
-            return Err("Backup verification failed; original is unchanged.".into());
-        }
-        Ok(())
+        backup_connection(&self.conn, path)
     }
 }
 
@@ -447,4 +504,27 @@ pub fn register_vectors() {
             sqlite_vec::sqlite3_vec_init as *const ()
         )));
     }
+}
+
+fn backup_connection(conn: &Connection, path: &Path) -> Result<()> {
+    if path.exists() {
+        return Err("Destination already exists. Choose a new filename.".into());
+    }
+    conn.backup("main", path, None).map_err(err)?;
+    let dest = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(err)?;
+    let check: String = dest
+        .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+        .map_err(err)?;
+    let broken: bool = dest
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+    if check != "ok" || broken {
+        return Err("Backup verification failed; original is unchanged.".into());
+    }
+    Ok(())
 }

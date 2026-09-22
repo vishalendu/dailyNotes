@@ -3,6 +3,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 
 fn note(day: &str, body: &str) -> Note {
     Note {
+        content: None,
         day: day.into(),
         body: body.into(),
         revision: 0,
@@ -301,7 +302,7 @@ fn todos_bookmarks_and_migration() {
     assert_eq!(db.bookmarks(&day).unwrap().len(), 2);
     // Simulate the previous shipped schema and verify existing notes survive upgrading.
     db.conn
-        .execute_batch("DROP TABLE page_bookmarks; DROP TABLE bookmarks; PRAGMA user_version=1;")
+        .execute_batch("DROP TABLE page_bookmarks; DROP TABLE bookmarks; ALTER TABLE notes DROP COLUMN content_blob; ALTER TABLE notes DROP COLUMN content_version; PRAGMA user_version=1;")
         .unwrap();
     drop(db);
     let db = Store::open(&path, false).unwrap();
@@ -311,6 +312,145 @@ fn todos_bookmarks_and_migration() {
         db.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        2
+        4
     );
+}
+
+#[test]
+fn rich_document_storage_and_migration() {
+    use serde_json::{json, Value};
+    register_vectors();
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../tests/fixtures/rich-document.json")).unwrap();
+    let doc = fixture["content"].clone();
+    let (body, attachments) = crate::document::project(&doc).unwrap();
+    assert_eq!(body, fixture["body"].as_str().unwrap());
+    assert_eq!(
+        serde_json::to_value(&attachments).unwrap(),
+        fixture["attachments"]
+    );
+    let compressed = crate::document::encode(&doc).unwrap();
+    assert_eq!(crate::document::decode(&compressed, 1).unwrap(), doc);
+    assert!(compressed.len() < serde_json::to_vec(&doc).unwrap().len());
+    assert!(crate::document::decode(&compressed, 99).is_err());
+    assert!(crate::document::decode(b"bad gzip", 1).is_err());
+    let mut unsafe_doc = doc.clone();
+    unsafe_doc["content"][1]["content"][2]["marks"][0]["attrs"]["href"] =
+        json!("javascript:alert(1)");
+    assert!(crate::document::project(&unsafe_doc).is_err());
+    unsafe_doc = doc.clone();
+    unsafe_doc["content"][4]["content"][1]["attrs"]["src"] = json!("https://tracker.example/image");
+    assert!(crate::document::project(&unsafe_doc).is_err());
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rich.sqlite");
+    let mut db = Store::open(&path, true).unwrap();
+    let day = chrono::Local::now().date_naive().to_string();
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(2, 2)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    assert_eq!(
+        db.add_image(&STANDARD.encode(png.into_inner())).unwrap().id,
+        1
+    );
+    let mut rich = note(&day, &body);
+    rich.content = Some(doc.clone());
+    rich.attachments = attachments;
+    let saved = db.save(&rich).unwrap();
+    assert_eq!(saved.content, Some(doc.clone()));
+    db.conn.execute("DELETE FROM pending", []).unwrap();
+    let vector = vec![0_u8; 1536];
+    db.conn.execute("INSERT INTO chunks(note_id,revision,offset,text,vector) SELECT id,revision,0,body,?1 FROM notes",[vector]).unwrap();
+    let mut formatted = saved.clone();
+    formatted.content.as_mut().unwrap()["content"][0]["attrs"]["level"] = json!(3);
+    formatted.content.as_mut().unwrap()["content"][0]["attrs"]["lineHeight"] = json!(1.2);
+    formatted.content.as_mut().unwrap()["content"][0]["content"][0]["marks"] =
+        json!([{"type":"textStyle","attrs":{"fontFamily":"Missing Font", "fontSize":"18px"}}]);
+    let styled = formatted.content.as_ref().unwrap();
+    let encoded = crate::document::encode(styled).unwrap();
+    assert!(crate::document::decode(&encoded, 1).is_err());
+    assert_eq!(crate::document::decode(&encoded, 2).unwrap(), *styled);
+    let mut bad = styled.clone();
+    bad["content"][0]["content"][0]["marks"][0]["attrs"]["fontFamily"] = json!("Arial; color:red");
+    assert!(crate::document::project(&bad).is_err());
+    bad = styled.clone();
+    bad["content"][0]["attrs"]["lineHeight"] = json!(100);
+    assert!(crate::document::project(&bad).is_err());
+    let updated = db.save(&formatted).unwrap();
+    assert_eq!(
+        db.conn
+            .query_row("SELECT count(*) FROM pending", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        db.conn
+            .query_row("SELECT revision FROM chunks", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        updated.revision
+    );
+    assert!(db.save(&saved).is_err());
+    assert_eq!(
+        db.collection_hits("todos", "First", Some(7), false, None, 101)
+            .unwrap()
+            .len(),
+        1
+    );
+    let backup = dir.path().join("backup.sqlite");
+    db.backup(&backup).unwrap();
+    assert_eq!(
+        Store::open(&backup, false)
+            .unwrap()
+            .note(&day)
+            .unwrap()
+            .content,
+        updated.content
+    );
+    drop(db);
+    let db = Store::open(&path, false).unwrap();
+    assert_eq!(db.note(&day).unwrap().content, updated.content);
+    db.conn.pragma_update(None, "user_version", 3).unwrap();
+    drop(db);
+    let db = Store::open(&path, false).unwrap();
+    assert_eq!(db.note(&day).unwrap().content, updated.content);
+    let pre_v4 = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|f| f.ok())
+        .find(|f| {
+            f.file_name().to_string_lossy().contains("pre-v4")
+                && f.path().extension().is_some_and(|e| e == "sqlite")
+        })
+        .unwrap();
+    let backup_conn = rusqlite::Connection::open(pre_v4.path()).unwrap();
+    assert_eq!(
+        backup_conn
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        3
+    );
+    // A shipped v2 library has no structured columns. Legacy text/images stay unchanged.
+    db.conn.execute_batch("ALTER TABLE notes DROP COLUMN content_blob; ALTER TABLE notes DROP COLUMN content_version; PRAGMA user_version=2;").unwrap();
+    drop(db);
+    let db = Store::open(&path, false).unwrap();
+    let legacy = db.note(&day).unwrap();
+    assert_eq!(legacy.body, body);
+    assert_eq!(legacy.attachments, rich.attachments);
+    assert!(legacy.content.is_none());
+    assert!(std::fs::read_dir(dir.path()).unwrap().any(|f| f
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .contains("pre-v3")));
+}
+
+#[test]
+fn installed_font_discovery() {
+    let fonts = tauri::async_runtime::block_on(crate::commands::installed_fonts()).unwrap();
+    assert!(
+        !fonts.is_empty(),
+        "Expected installed fonts on the test machine"
+    );
+    assert!(fonts
+        .windows(2)
+        .all(|pair| pair[0].to_lowercase() <= pair[1].to_lowercase()));
 }

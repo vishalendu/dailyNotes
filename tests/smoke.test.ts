@@ -59,3 +59,27 @@ test("encoding and developer utilities work on real text", async () => {
   assert.match(await transform("uuid", ""), /^[0-9a-f-]{36}$/);
   await assert.rejects(() => transform("base64-decode", "%%bad"));
 });
+
+test("nested rich documents share a stable text/image projection", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { canonical, withImageUrls } = await import("../src/document.ts");
+  const fixture = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/rich-document.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(serialize(fixture.content), {
+    body: fixture.body,
+    attachments: fixture.attachments,
+  });
+  assert.deepEqual(
+    canonical(
+      withImageUrls(
+        fixture.content,
+        new Map([[1, "data:image/png;base64,example"]]),
+      ),
+    ),
+    fixture.content,
+  );
+});

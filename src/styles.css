@@ -18,6 +18,10 @@
   --green: #3e604d;
   --soft: #e8ece2;
   --selection: #d9e5c8;
+  --editor-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --editor-size: 14px;
+  --editor-line: 1.4;
+  --editor-paragraph: 0px;
   --shadow: 0 24px 90px #22352621;
   color-scheme: light;
 }
@@ -295,9 +299,9 @@ select {
   flex: 1;
   min-width: 0;
   outline: none;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 14px;
-  line-height: 1.95;
+  font-family: var(--editor-font);
+  font-size: var(--editor-size);
+  line-height: var(--editor-line);
   min-height: 240px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -305,8 +309,8 @@ select {
   caret-color: var(--green);
 }
 .tiptap p {
-  margin: 0 0 7px;
-  min-height: 1.95em;
+  margin: 0 0 var(--editor-paragraph);
+  min-height: calc(1em * var(--editor-line));
 }
 .tiptap p.is-editor-empty:first-child::before {
   color: #a4a799;
@@ -572,4 +576,103 @@ kbd {
     scroll-behavior: auto !important;
     transition: none !important;
   }
+}
+
+.tiptap h1,
+.tiptap h2,
+.tiptap h3 {
+  font-family: inherit;
+  font-weight: 650;
+  letter-spacing: normal;
+  margin: 0.6em 0 0.25em;
+}
+.tiptap h1 {
+  font-size: 1.8em;
+}
+.tiptap h2 {
+  font-size: 1.5em;
+}
+.tiptap h3 {
+  font-size: 1.25em;
+}
+.tiptap ul,
+.tiptap ol {
+  padding-left: 1.6em;
+  margin: 0.3em 0;
+}
+.tiptap li > p {
+  margin-bottom: var(--editor-paragraph);
+}
+.tiptap blockquote {
+  border-left: 3px solid var(--green);
+  margin: 0.5em 0;
+  padding-left: 1em;
+  color: var(--muted);
+}
+.tiptap code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  background: var(--soft);
+  border-radius: 4px;
+  padding: 0.1em 0.25em;
+}
+.tiptap pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 12px;
+  border-radius: 8px;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.4;
+  margin: 0.5em 0;
+}
+.tiptap pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.95em;
+}
+.tiptap a {
+  color: var(--green);
+  text-decoration: underline;
+}
+.format-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.editor-context-menu {
+  position: fixed;
+  z-index: 100;
+  width: 250px;
+  background: var(--paper);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: var(--shadow);
+}
+.editor-context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+  border-radius: 5px;
+}
+.editor-context-menu button:hover,
+.editor-context-menu button:focus {
+  background: var(--soft);
+}
+
+.typography-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.typography-controls .field {
+  width: 100%;
+  min-width: 0;
+}
+#font-preview {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }

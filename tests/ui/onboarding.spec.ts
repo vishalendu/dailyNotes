@@ -6,6 +6,7 @@ test("first launch can close, create a library, and save a real edit", async ({
   // Exercise the desktop UI with an in-memory IPC boundary; Rust tests cover SQLite.
   await page.addInitScript(() => {
     const calls: string[] = [];
+    const notes = new Map<string, Record<string, unknown>>();
     const callbacks = new Map<number, (event: unknown) => void>();
     const listeners = new Map<string, number>();
     let nextId = 0;
@@ -36,6 +37,8 @@ test("first launch can close, create a library, and save a real edit", async ({
         invoke: async (command: string, args: Record<string, unknown>) => {
           calls.push(command);
           switch (command) {
+            case "installed_fonts":
+              return ["Arial", "Georgia", "Wingdings", "Webdings"];
             case "library_info":
               return library;
             case "model_status":
@@ -64,6 +67,7 @@ test("first launch can close, create a library, and save a real edit", async ({
                 revision: 0,
                 archived: false,
                 updated_at: "",
+                ...notes.get(String(args.day)),
               };
             case "bookmarks":
               return bookmarks.map((b) => ({
@@ -95,6 +99,10 @@ test("first launch can close, create a library, and save a real edit", async ({
             case "note_neighbors":
               return [null, null];
             case "save_note":
+              notes.set(String((args.note as Record<string, unknown>).day), {
+                ...(args.note as Record<string, unknown>),
+                revision: 1,
+              });
               return {
                 ...(args.note as object),
                 revision: 1,
@@ -103,6 +111,8 @@ test("first launch can close, create a library, and save a real edit", async ({
             case "finish_close":
             case "hide_window":
               return;
+            case "clipboard_text":
+              return "  plain **literal**\n#todo pasted";
             case "library_stats":
               return { active: 1, archived: 0, pending: 0, bytes: 1024 };
             case "hotkey_status":
@@ -173,6 +183,32 @@ test("first launch can close, create a library, and save a real edit", async ({
     .getByRole("textbox", { name: "Daily note editor" })
     .fill("My first real note");
   await expect(page.locator("#save-label")).toHaveText("All changes saved");
+  await page
+    .getByRole("textbox", { name: "Daily note editor" })
+    .press("ControlOrMeta+a");
+  await page
+    .getByRole("textbox", { name: "Daily note editor" })
+    .press("ControlOrMeta+b");
+  await expect(page.locator("#editor strong")).toHaveText("My first real note");
+  await page.getByRole("button", { name: "Formatting", exact: true }).click();
+  await expect(page.locator("#text-font option[value=Arial]")).toHaveCount(1);
+  await expect(page.locator("#text-font option[value=Wingdings]")).toHaveCount(
+    0,
+  );
+  await page.getByLabel("Font", { exact: true }).selectOption("Arial");
+  await page.getByLabel("Size", { exact: true }).selectOption("18px");
+  await page.getByRole("button", { name: "Apply to selection" }).click();
+  await page.getByLabel("Choose note date").fill("2020-01-02");
+  await expect(page.locator("#page-title")).toContainText("January 2");
+  await page.getByLabel("Choose note date").fill("2020-01-01");
+  await expect(page.locator("#editor strong")).toHaveText("My first real note");
+  await expect(page.locator('#editor span[style*="Arial"]')).toHaveText(
+    "My first real note",
+  );
+  await expect(page.locator('#editor span[style*="Arial"]')).toHaveCSS(
+    "font-size",
+    "18px",
+  );
   await page
     .getByRole("button", { name: "Bookmark this page", exact: true })
     .click();
@@ -259,4 +295,12 @@ test("first launch can close, create a library, and save a real edit", async ({
       ),
     )
     .toEqual(["save_note", "hide_window"]);
+  await page
+    .getByRole("textbox", { name: "Daily note editor" })
+    .press("ControlOrMeta+a");
+  await page
+    .getByRole("textbox", { name: "Daily note editor" })
+    .press("ControlOrMeta+Shift+v");
+  await expect(page.locator("#editor")).toContainText("plain **literal**");
+  await expect(page.locator("#editor strong")).toHaveCount(0);
 });

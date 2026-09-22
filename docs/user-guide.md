@@ -10,6 +10,39 @@ Type freely or paste an image at the cursor. Each calendar date has one page. Hi
 
 The arrows move between saved notes, skipping dates without a note. An arrow is disabled when there is no earlier or later note in the current collection (active or archived). Use the calendar to open any date, or Today to start today's page.
 
+## Fonts and compact spacing
+
+Open **Aa** beside the date controls. Select text, choose **Font** and **Size**, preview, then **Apply to selection**. Only that text changes. With a cursor and no selection, your next typing uses the chosen style. Select all to format the current note; code retains its monospace styling. Different selections and different notes can have different fonts. The controls show **Mixed** when a selection contains different styles; opening Aa alone changes nothing.
+
+**Line spacing** and **Paragraph spacing** affect the paragraphs/headings touched by the selection, or the current paragraph. They do not remove deliberate blank lines. Size ranges from 12–24px, line height from 1.0–2.0, and paragraph spacing is 0/4/8/12px. Unstyled text defaults to system sans-serif, 14px, line height 1.4, and zero extra spacing. Typography is saved with the note and supports undo/redo. **Clear formatting** removes selected styling without deleting text or images.
+
+The Font dropdown includes portable sans-serif/serif/monospace choices and fonts installed on this computer. Reopen Aa to refresh the installed list. Font discovery errors leave generic choices available. If you move the library to a computer without a chosen font, text falls back to the default system sans-serif; its original font name, size, and other formatting remain saved. Installing that font restores its appearance. No fonts are downloaded or embedded.
+
+Known symbol fonts such as Wingdings/Webdings are excluded from new font choices. Imported content using a missing symbol font shows a warning: fallback may change the meaning of its characters. Use Unicode symbols or paste an image for portable symbols. Original characters are preserved; the app cannot identify every custom symbol encoding.
+
+The former global Editor appearance setting has been removed. Its old machine-local preferences no longer affect notes; unstyled content returns to the compact defaults. Stored rich formatting is preserved, and notes are not rewritten merely by opening them.
+
+## Formatting and Markdown shortcuts
+
+Use the **Aa** button beside the date, or command-palette actions for Bold, Italic, Strikethrough, Inline code, Heading 1–3, Bullet list, Numbered list, Blockquote, Code block, and Add or edit link. Cmd/Ctrl+B and Cmd/Ctrl+I toggle bold and italic. Clear formatting removes styling from the selected content while keeping text and images.
+
+Markdown typing shortcuts format directly in the editor: type `# ` for a heading, `- ` for a bullet list, `1. ` for a numbered list, `> ` for a quote, or a triple-backtick fence followed by space/Enter for a code block. Inline markers such as `**bold**`, `*italic*`, and backticks format while typing. Edit the formatted result directly; there is no separate Markdown preview pane. `#todo` and `#TODO` remain literal tags, since they have no space after the hash.
+
+Pasted plain text and existing notes are not automatically interpreted as Markdown. Select a pasted Markdown passage and choose **Convert selection from Markdown** when you want conversion. Basic formatting is supported; tables, syntax highlighting, executable code, and arbitrary HTML/CSS editing are not included.
+
+Enter makes a paragraph or list item; Shift+Enter inserts a line break. Inside a list, Tab and Shift+Tab indent/outdent. Code blocks preserve indentation and line breaks; Tab inserts two spaces, and long lines scroll horizontally. Use Cmd/Ctrl+Enter to exit a code block. JSON tools applied inside a code block keep it as code, and Undo restores a transformation in one step. Cmd/Ctrl-click a link to open it externally; ordinary clicking lets you edit its text.
+
+## Pasting with or without formatting
+
+- **Normal paste (Cmd/Ctrl+V):** keeps supported semantic formatting and validated font/size styles from HTML, while normalizing source margins and line spacing to compact defaults. Unsafe content and remote images are removed. Image-only clipboard data continues through the normal image importer.
+- **Paste without formatting:** Cmd+Shift+V on macOS or Ctrl+Shift+V on Windows/Linux, the editor's right-click menu, or the command palette. It removes styling—including inherited bold/italic at the insertion point—while preserving line breaks, indentation, and blank lines. Windows/Linux native shortcuts still need platform testing.
+- **Paste inside code:** always inserts literal text. HTML and Markdown markers are not interpreted.
+- **Clear formatting:** fixes text that is already in a note.
+
+Line endings are normalized to LF. Clipboard text is read only when you ask to paste. If clipboard access fails, the note is left unchanged. Copying formatted text and images between pages in the same open library preserves them. After switching libraries or restarting, embedded HTML image IDs are not trusted; paste the original image file/clipboard image again if needed. External HTML images are not downloaded.
+
+Formatting is saved inside your SQLite database. Existing notes remain unchanged until you edit them. Before the v4 storage upgrade, a verified `pre-v4` backup is kept beside the library. Emergency draft export includes `.txt`, structured `.json`, and image files so rich content is recoverable as well as readable. Old app binaries cannot open the upgraded library.
+
 ## Finding commands and help
 
 Press **Cmd+Shift+P on macOS** or **Ctrl+Shift+P on Windows/Linux** to open the command palette. You can also use the command button. Type an action such as “format JSON,” “search archive,” “backup,” or “settings,” then select it with the arrow keys and Enter.
@@ -72,7 +105,7 @@ Archived notes remain readable and editable. Use Restore to notes to return one 
 
 Select text, open the palette, and choose a tool. Initial tools include JSON formatting/minifying/validation/key sorting, Base64 and URL encoding/decoding, HTML entities, case conversion, line sorting/deduplication, counts, JWT inspection, timestamp conversion, SHA-256, and UUID generation.
 
-With no selection, a transforming tool asks you to choose Use entire note. Select text only when the note includes images. Each transformation can be undone in one step. Invalid input leaves the note unchanged. Inspection tools show a result panel with Copy instead of replacing your text. JWT decoding displays contents but does not verify the signature.
+With no selection, a transforming tool asks you to choose Use entire note. Select text only when the note includes images. Each transformation can be undone in one step. A text tool replaces its selected rich content with plain output; surrounding formatting stays intact. Within a code block, it replaces code text without removing the block. Invalid input leaves the note unchanged. Inspection tools show a result panel with Copy instead of replacing your text. JWT decoding displays contents but does not verify the signature.
 
 These tools work locally and do not need the embedding model.
 

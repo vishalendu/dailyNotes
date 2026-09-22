@@ -13,6 +13,8 @@ export function toolCommands(
     group: "Text tools",
     aliases: id === "json-format" ? "pretty print beautify" : "",
     run: async () => {
+      if (!editor.editor.isEditable)
+        throw new Error("Open a readable page before using text tools.");
       const initial = revision();
       let selection = editor.selection();
       if (selection.from === selection.to && id !== "uuid") {
@@ -20,7 +22,7 @@ export function toolCommands(
           !inspection.has(id) &&
           !(await ask(
             "Use the entire note?",
-            "Select a passage to transform only that text, or apply this tool to the whole note.",
+            "Select a passage to transform only that text, or apply this tool to the whole note. Rich formatting in the transformed selection is replaced with plain text; a single code block stays code.",
             "Use entire note",
           ))
         )

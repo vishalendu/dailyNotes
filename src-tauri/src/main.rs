@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod collections;
 mod commands;
+mod document;
 mod embeddings;
 mod hotkey;
 mod images;
@@ -27,6 +28,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let libraries = Arc::new(Mutex::new(
@@ -85,6 +87,8 @@ fn main() {
             hotkey::set_hotkey,
             hotkey::hide_window,
             commands::library_info,
+            commands::clipboard_text,
+            commands::installed_fonts,
             commands::choose_library,
             commands::get_note,
             commands::bookmarks,

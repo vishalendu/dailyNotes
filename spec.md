@@ -1,6 +1,10 @@
 # Daily Notes — product and architecture specification
 
-Status: consolidated implementation specification, 2026-09-18. No application code is included yet. Stack choices below are the proposed cross-platform implementation.
+Status: baseline specification for the implemented version 0.1, with subsequent enhancement notes below. Not every original design target has shipped; see README for implementation and validation status.
+
+Selection-based typography supersedes the earlier global appearance setting; see [Selection-based formatting under Aa](docs/selection-formatting-plan.md) for scope and verification. Implementation and validation status are recorded below.
+
+The editor improvements in [Editor usability and formatting plan](docs/editor-enhancements-plan.md) are implemented as of 2026-09-22. The implemented behavior and validation limits are recorded in the rich-editor section below; it supersedes the original plain-text-only editor design.
 
 ## 1. Product
 
@@ -184,7 +188,7 @@ Add a composite index on `notes(is_archived, day)` for active/archive date queri
 
 ### Text and attachment representation
 
-Persist the editor's text with one U+FFFC object-replacement character for each inline image. Store each image occurrence's UTF-16 offset in `note_images`, matching JavaScript string offsets. Use a restricted editor schema of paragraphs, text, hard breaks, and inline images. Define a deterministic serializer: paragraph boundaries and hard breaks become newlines, and each image becomes one placeholder. Rebuild offsets by traversing the document on save rather than manually shifting positions after every edit. Rust must convert UTF-16 offsets safely rather than treating them as byte positions.
+Persist the editor's text with one U+FFFC object-replacement character for each inline image. Store each image occurrence's UTF-16 offset in `note_images`, matching JavaScript string offsets. Use the versioned rich editor schema described below, including paragraphs, headings, lists, quotes, code, marks, safe links, and inline images. Define a deterministic serializer: paragraph boundaries and hard breaks become newlines, and each image becomes one placeholder. Rebuild offsets by traversing the document on save rather than manually shifting positions after every edit. Rust must convert UTF-16 offsets safely rather than treating them as byte positions.
 
 On load, reconstruct editor image nodes at those positions using the referenced images. Validate that offsets are ordered, in range, and point to attachment characters. Treat incoming literal U+FFFC text as ordinary sanitized text rather than inventing a missing image. This format stores the text once and image bytes once, including when an image is reused in several notes. Maintain an offset-to-editor-position mapping for search navigation; editor node positions are not interchangeable with serialized text offsets.
 
@@ -395,3 +399,26 @@ Cloud sync, mobile/web clients, collaboration, generative AI assistants, tags/fo
 Use Tauri's global-shortcut plugin from Rust to register a configurable show/hide shortcut. Default: Control+Alt+Space (Control+Option+Space on macOS). A press brings an unfocused/hidden/minimized window forward and focuses the editor. A press while focused asks the frontend to flush pending edits before hiding; a failed save leaves the window visible. Handle key-down only and ignore repeats until release.
 
 Store the chosen shortcut in application preferences, independently of the library. Settings supports changing or disabling it and displays registration errors. Register a replacement before releasing the old binding so conflicts do not silently disable the working shortcut. Include Help and User Guide instructions. The app must remain running; Quit unregisters its shortcut. Native support: macOS, Windows, Linux/X11. Wayland needs a desktop-configured launch/activation shortcut until a portal integration is added.
+
+
+## Implemented enhancement: compact rich editor (2026-09-22)
+
+- Historical initial implementation (superseded by selection-based typography below): Editor appearance was configurable in Settings and the palette: sans-serif/serif/monospace with optional installed font name and system fallbacks, size 12–24px, line height 1.0–2.0, paragraph spacing 0/4/8/12px. Defaults: system sans-serif, 14px, 1.4, 0px. Preferences are local to the installation (webview local storage, like the theme), apply across libraries, and do not mutate notes. Code uses monospace and horizontal scrolling.
+- Tiptap now enables bold, italic, strike, inline code, H1–H3, paragraphs, nested numbered/bulleted lists, blockquotes, code blocks, and safe links. Aa opens compact formatting controls; the same actions are in the palette. Markdown typing rules format in place; explicit Convert selection from Markdown handles pasted Markdown. Plain paste and legacy notes remain literal. Clear formatting retains text and image references. No arbitrary HTML source editor, tables, code execution, or syntax highlighting.
+- Normal paste sanitizes supported semantic HTML and strips source styles and remote images; image-only clipboard content uses the validated image importer. Cmd/Ctrl+Shift+V, the editor context menu, and the palette expose plain paste. Native menu/palette reads use a Rust clipboard-text command. Plain/code paste preserves whitespace (apart from LF normalization) and clears inherited marks. Actual Windows/Linux native clipboard behavior remains to be validated.
+- App-origin copy retains a session-local ProseMirror slice keyed by an unpredictable clipboard token. It is reusable only in the same library; switching libraries invalidates the token. External HTML cannot assign internal image IDs. The persistent document contains IDs and alt text, never data URLs or base64 image bytes.
+- SQLite schema v3 adds nullable `notes.content_blob` (gzip JSON) and `notes.content_version` (codec/schema version 1). `body` remains the derived FTS/TODO/embedding projection. Both Rust and TypeScript traverse nested text blocks with single-newline separators and U+FFFC image placeholders; shared fixtures verify UTF-16 offsets. Search navigation maps those offsets back to editor positions.
+- The Rust boundary validates allowed structures, marks, attributes, http/https/mailto links, image IDs, projection equality, depth ≤32, ≤100,000 nodes, ≤5 MiB text, and ≤10 MiB decompressed JSON. Gzip decoding is bounded; corrupt and unsupported rich content fails without a silent plain-text fallback. A rich note cannot be overwritten by a payload missing its structured document.
+- Back up and verify old libraries before migrations. Load legacy notes using their existing text/image mapping; write rich content lazily on an actual edit. Save document, projection, images, and revision transactionally. Formatting-only changes preserve vector data and advance its revision while retaining any queued text indexing; text changes invalidate vectors normally. Emergency export adds structured JSON beside text and images.
+- Basic coverage: compact layout and persisted appearance; semantic HTML paste and explicit plain paste; Markdown conversion; code-block JSON formatting and one-step Undo; shared rich-document/image round trips; nested TODO hit positions; scoped image copy; malformed documents/links; migration backups; revision conflicts; formatting-only vector retention; database backup/reopen. Desktop compilation and packaged macOS checks accompany browser smoke tests. Windows/Linux remain unverified native targets.
+
+
+## Selection-based typography under Aa
+
+Global typography Settings and its palette entry are removed. Fixed compact defaults apply only to unstyled text. Aa provides font/size on a selected text range or future cursor typing, mixed-selection indicators, preview, Apply, and paragraph-scoped line height/spacing. Known symbol fonts are omitted from new choices; imported missing symbol fonts warn without changing original characters. Other missing fonts render with the default system sans-serif. Font metadata travels with the note, but font binaries are never embedded or downloaded. Code retains monospace styling.
+
+The editor uses Tiptap TextStyle/FontFamily/FontSize with restricted paragraph attributes. TypeScript canonicalization and Rust validation retain only bounded, safe family names, sizes 12–24px, line heights 1.0–2.0, and paragraph spacing 0/4/8/12px. External paste allowlists font/size while discarding source spacing and other CSS. Plain paste clears inline formatting; same-library trusted clipboard copies retain rich attributes.
+
+SQLite compatibility version 4 requires a verified pre-v4 backup before upgrade. Rich-document version 2 adds typography; version 1 and legacy content remain readable without bulk rewriting. Older binaries reject upgraded libraries. Text projection and image offsets remain unchanged by style changes; atomic save/revision checks and formatting-only vector retention continue. Old localStorage appearance preferences are retired without applying them to every note.
+
+Font enumeration uses font-kit off the UI thread, on demand. Generic fonts work if enumeration fails. macOS discovery and the desktop build are validated locally; native Windows/Linux behavior remains unverified. Linux builds additionally need FreeType and Fontconfig development packages.

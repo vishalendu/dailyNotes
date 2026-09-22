@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 export interface Attachment {
   offset: number;
   id: number;
@@ -21,6 +22,7 @@ export interface CollectionSearch {
   limit: number;
 }
 export interface Note {
+  content?: JSONContent | null;
   day: string;
   body: string;
   revision: number;

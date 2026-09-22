@@ -13,6 +13,8 @@ import type {
 } from "./types";
 export const desktop = isTauri();
 export const api = {
+  installedFonts: () => invoke<string[]>("installed_fonts"),
+  clipboardText: () => invoke<string>("clipboard_text"),
   hotkey: () => invoke<HotkeyStatus>("hotkey_status"),
   setHotkey: (shortcut: string) =>
     invoke<HotkeyStatus>("set_hotkey", { shortcut }),

@@ -6,7 +6,11 @@ export function serialize(doc: JSONContent): {
 } {
   let body = "";
   const attachments: Attachment[] = [];
+  let blocks = 0;
   const walk = (node: JSONContent) => {
+    if (["paragraph", "heading", "codeBlock"].includes(node.type ?? "")) {
+      if (blocks++) body += "\n";
+    }
     if (node.type === "text")
       body += (node.text ?? "").replaceAll("\uFFFC", "�");
     else if (node.type === "image") {
@@ -18,10 +22,7 @@ export function serialize(doc: JSONContent): {
     } else if (node.type === "hardBreak") body += "\n";
     else node.content?.forEach(walk);
   };
-  (doc.content ?? []).forEach((node, i) => {
-    if (i) body += "\n";
-    walk(node);
-  });
+  walk(doc);
   return { body, attachments };
 }
 export function deserialize(
@@ -61,4 +62,61 @@ export function deserialize(
     return { type: "paragraph", content: nodes };
   });
   return { type: "doc", content };
+}
+
+// Persist only semantic attributes: display URLs and clipboard HTML never belong in SQLite.
+export function canonical(doc: JSONContent): JSONContent {
+  const node: JSONContent = { type: doc.type };
+  if (doc.text !== undefined) node.text = doc.text.replaceAll("\uFFFC", "�");
+  if (doc.content) node.content = doc.content.map(canonical);
+  if (doc.type === "heading") node.attrs = { level: doc.attrs?.level ?? 1 };
+  if (["paragraph", "heading"].includes(doc.type ?? "")) {
+    for (const key of ["lineHeight", "paragraphSpacing"]) {
+      if (doc.attrs?.[key] != null)
+        node.attrs = { ...node.attrs, [key]: doc.attrs[key] };
+    }
+  }
+  if (doc.type === "orderedList") node.attrs = { start: doc.attrs?.start ?? 1 };
+  if (doc.type === "codeBlock")
+    node.attrs = { language: doc.attrs?.language ?? null };
+  if (doc.type === "image")
+    node.attrs = {
+      imageId: doc.attrs?.imageId,
+      alt: doc.attrs?.alt ?? "Image",
+    };
+  if (doc.type === "text" && doc.marks?.length)
+    node.marks = doc.marks.map((m) =>
+      m.type === "link"
+        ? { type: m.type, attrs: { href: m.attrs?.href } }
+        : m.type === "textStyle"
+          ? {
+              type: m.type,
+              attrs: Object.fromEntries(
+                ["fontFamily", "fontSize"]
+                  .filter((k) => m.attrs?.[k] != null)
+                  .map((k) => [k, m.attrs![k]]),
+              ),
+            }
+          : { type: m.type },
+    );
+  return node;
+}
+export function withImageUrls(
+  doc: JSONContent,
+  urls: Map<number, string>,
+): JSONContent {
+  return {
+    ...doc,
+    ...(doc.type === "image"
+      ? {
+          attrs: {
+            ...doc.attrs,
+            src: urls.get(Number(doc.attrs?.imageId)) ?? "",
+          },
+        }
+      : {}),
+    ...(doc.content
+      ? { content: doc.content.map((n) => withImageUrls(n, urls)) }
+      : {}),
+  };
 }

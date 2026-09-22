@@ -451,7 +451,7 @@ mod smoke {
         manager
             .switch(temp.path().join("notes.sqlite"), true)
             .unwrap();
-        for (day,body) in [("2026-09-18","The release failed because our container could not start. Fixed the deployment configuration."),("2026-09-17","Bought tomatoes and basil for a pasta dinner.")]{manager.active().unwrap().store.save(&Note{day:day.into(),body:body.into(),revision:0,archived:false,attachments:vec![],updated_at:String::new()}).unwrap();}
+        for (day,body) in [("2026-09-18","The release failed because our container could not start. Fixed the deployment configuration."),("2026-09-17","Bought tomatoes and basil for a pasta dinner.")]{manager.active().unwrap().store.save(&Note{content:None,day:day.into(),body:body.into(),revision:0,archived:false,attachments:vec![],updated_at:String::new()}).unwrap();}
         let libraries = Arc::new(Mutex::new(manager));
         index_one(&libraries, &mut model).unwrap();
         index_one(&libraries, &mut model).unwrap();

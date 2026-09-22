@@ -11,6 +11,21 @@ use std::{
 };
 use tauri::{Manager, State};
 
+#[tauri::command]
+pub async fn installed_fonts() -> Result<Vec<String>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut names = font_kit::source::SystemSource::new()
+            .all_families()
+            .map_err(err)?;
+        names.retain(|name| !name.trim().is_empty() && !name.starts_with('.'));
+        names.sort_by_cached_key(|name| name.to_lowercase());
+        names.dedup();
+        Ok(names)
+    })
+    .await
+    .map_err(err)?
+}
+
 async fn with_store<T: Send + 'static>(
     libs: Arc<Mutex<Libraries>>,
     f: impl FnOnce(&mut Libraries) -> Result<T> + Send + 'static,
@@ -209,6 +224,7 @@ pub async fn export_note(
     library_id: String,
     state: State<'_, AppState>,
 ) -> Result<()> {
+    crate::storage::valid_day(&note.day)?;
     with_store(state.libraries.clone(), move |m| {
         let l = m.assert_id(&library_id)?;
         let folder =
@@ -219,6 +235,13 @@ pub async fn export_note(
             note.body.replace('\u{fffc}', "[image]"),
         )
         .map_err(err)?;
+        if let Some(content) = &note.content {
+            let bytes = serde_json::to_vec_pretty(content).map_err(err)?;
+            if bytes.len() > 10 * 1024 * 1024 {
+                return Err("Document export exceeds 10 MiB".into());
+            }
+            std::fs::write(folder.join(format!("{}.json", note.day)), bytes).map_err(err)?;
+        }
         for a in note.attachments {
             let (mime, bytes): (String, Vec<u8>) = l
                 .store
@@ -302,4 +325,10 @@ pub async fn collection_hits(
         )
     })
     .await
+}
+
+#[tauri::command]
+pub fn clipboard_text(app: tauri::AppHandle) -> Result<String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    app.clipboard().read_text().map_err(err)
 }

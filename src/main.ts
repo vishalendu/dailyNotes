@@ -6,6 +6,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import icon from "../assets/daily-notes-icon.png";
 import { api, desktop } from "./api";
 import { NoteEditor } from "./editor";
+import {
+  formattingCommands,
+  showFormatting,
+  installEditorContextMenu,
+} from "./formatting";
 import { Palette } from "./palette";
 import { SearchPanel } from "./search";
 import { Collections } from "./collections";
@@ -25,7 +30,7 @@ import {
 import type { Note, LibraryInfo, Command, ModelStatus } from "./types";
 
 $("#app").innerHTML =
-  `<div class="app-shell"><header class="topbar"><button class="brand" id="brand" aria-label="Go to today"><img src="${icon}" alt=""><span>daily<span class="brand-light">notes</span><small>A LITTLE SPACE FOR YOUR DAY</small></span></button><div class="topbar-right"><span class="local-badge"><span></span> Local & private</span><button class="icon-button" id="open-command" aria-label="Open command palette" title="Commands (${mod} ⇧ P)"><i data-lucide="command"></i></button><button class="icon-button" id="open-help" aria-label="Help" title="Help"><i data-lucide="help-circle"></i></button><button class="icon-button" id="open-settings" aria-label="Settings" title="Settings"><i data-lucide="settings"></i></button></div></header><div class="workspace"><nav class="rail" aria-label="Note navigation"><button class="rail-button active" id="today" title="Today"><i data-lucide="notebook-pen"></i><span>Today</span></button><button class="rail-button" id="search" title="Search notes"><i data-lucide="search"></i><span>Search</span></button><button class="rail-button" id="history" title="History"><i data-lucide="clock"></i><span>History</span></button><button class="rail-button" id="todos" title="TODOs"><i data-lucide="list-todo"></i><span>TODOs</span></button><button class="rail-button" id="bookmarks" title="Bookmarks"><i data-lucide="bookmark"></i><span>Bookmarks</span></button><div class="rail-spacer"></div><button class="rail-button" id="archive" title="Search archive"><i data-lucide="archive"></i><span>Archive</span></button><button class="rail-button" id="theme" title="Switch appearance" aria-label="Switch appearance"><i data-lucide="sun"></i></button></nav><aside id="search-panel" class="search-panel" hidden></aside><aside id="collections-panel" class="search-panel" hidden></aside><main class="page-area"><div id="preview-banner" class="preview-banner" hidden>Browser preview · use the desktop app to save your notes</div><div id="day-banner" class="day-banner" hidden>A new day is here. <button id="new-day">Open today →</button></div><div class="note-page"><div class="page-meta"><span class="eyebrow" id="day-label">TODAY’S PAGE</span><div class="date-controls"><button class="icon-button small" id="page-bookmarks" aria-label="Bookmark this page" title="Bookmark this page"><i data-lucide="bookmark"></i></button><button class="icon-button small" id="previous-day" aria-label="Previous day"><i data-lucide="arrow-left"></i></button><label class="date-picker" title="Jump to a date"><i data-lucide="calendar-days"></i><input id="date-input" type="date" aria-label="Choose note date"></label><button class="icon-button small" id="next-day" aria-label="Next day"><i data-lucide="arrow-right"></i></button></div></div><h1 id="page-title"></h1><p class="page-subtitle" id="page-subtitle"></p><p id="bookmark-labels" class="muted" hidden></p><div id="archive-banner" class="archive-banner" hidden><i data-lucide="archive"></i>This page is archived.<button id="restore">Restore to notes</button></div><div class="note-rule"><span></span></div><div id="editor"></div><div class="page-hint"><span><i data-lucide="image-plus"></i> Paste an image or drop it here</span><button id="hint-commands">Your tools, one shortcut away <kbd>${mod} ⇧ P</kbd></button></div></div><footer class="statusbar"><button id="save-status" class="save-status" title="Save now / retry"><span class="status-dot"></span><span id="save-label">Ready when you are</span></button><span id="word-count">0 words</span><button id="model-indicator" title="Model and indexing settings"><i data-lucide="sparkles"></i><span>Meaning search</span></button><span class="footer-note">One day at a time.</span></footer></main></div></div><dialog id="palette" class="palette" aria-label="Command palette"></dialog><dialog id="dialog" aria-label="Daily Notes dialog"></dialog><div id="toast" role="status" hidden></div>`;
+  `<div class="app-shell"><header class="topbar"><button class="brand" id="brand" aria-label="Go to today"><img src="${icon}" alt=""><span>daily<span class="brand-light">notes</span><small>A LITTLE SPACE FOR YOUR DAY</small></span></button><div class="topbar-right"><span class="local-badge"><span></span> Local & private</span><button class="icon-button" id="open-command" aria-label="Open command palette" title="Commands (${mod} ⇧ P)"><i data-lucide="command"></i></button><button class="icon-button" id="open-help" aria-label="Help" title="Help"><i data-lucide="help-circle"></i></button><button class="icon-button" id="open-settings" aria-label="Settings" title="Settings"><i data-lucide="settings"></i></button></div></header><div class="workspace"><nav class="rail" aria-label="Note navigation"><button class="rail-button active" id="today" title="Today"><i data-lucide="notebook-pen"></i><span>Today</span></button><button class="rail-button" id="search" title="Search notes"><i data-lucide="search"></i><span>Search</span></button><button class="rail-button" id="history" title="History"><i data-lucide="clock"></i><span>History</span></button><button class="rail-button" id="todos" title="TODOs"><i data-lucide="list-todo"></i><span>TODOs</span></button><button class="rail-button" id="bookmarks" title="Bookmarks"><i data-lucide="bookmark"></i><span>Bookmarks</span></button><div class="rail-spacer"></div><button class="rail-button" id="archive" title="Search archive"><i data-lucide="archive"></i><span>Archive</span></button><button class="rail-button" id="theme" title="Switch appearance" aria-label="Switch appearance"><i data-lucide="sun"></i></button></nav><aside id="search-panel" class="search-panel" hidden></aside><aside id="collections-panel" class="search-panel" hidden></aside><main class="page-area"><div id="preview-banner" class="preview-banner" hidden>Browser preview · use the desktop app to save your notes</div><div id="day-banner" class="day-banner" hidden>A new day is here. <button id="new-day">Open today →</button></div><div class="note-page"><div class="page-meta"><span class="eyebrow" id="day-label">TODAY’S PAGE</span><div class="date-controls"><button class="button" id="format-note" aria-label="Formatting">Aa</button><button class="icon-button small" id="page-bookmarks" aria-label="Bookmark this page" title="Bookmark this page"><i data-lucide="bookmark"></i></button><button class="icon-button small" id="previous-day" aria-label="Previous day"><i data-lucide="arrow-left"></i></button><label class="date-picker" title="Jump to a date"><i data-lucide="calendar-days"></i><input id="date-input" type="date" aria-label="Choose note date"></label><button class="icon-button small" id="next-day" aria-label="Next day"><i data-lucide="arrow-right"></i></button></div></div><h1 id="page-title"></h1><p class="page-subtitle" id="page-subtitle"></p><p id="bookmark-labels" class="muted" hidden></p><div id="archive-banner" class="archive-banner" hidden><i data-lucide="archive"></i>This page is archived.<button id="restore">Restore to notes</button></div><div class="note-rule"><span></span></div><div id="editor"></div><div class="page-hint"><span><i data-lucide="image-plus"></i> Paste an image or drop it here</span><button id="hint-commands">Your tools, one shortcut away <kbd>${mod} ⇧ P</kbd></button></div></div><footer class="statusbar"><button id="save-status" class="save-status" title="Save now / retry"><span class="status-dot"></span><span id="save-label">Ready when you are</span></button><span id="word-count">0 words</span><button id="model-indicator" title="Model and indexing settings"><i data-lucide="sparkles"></i><span>Meaning search</span></button><span class="footer-note">One day at a time.</span></footer></main></div></div><dialog id="palette" class="palette" aria-label="Command palette"></dialog><dialog id="dialog" aria-label="Daily Notes dialog"></dialog><div id="toast" role="status" hidden></div>`;
 
 let info: LibraryInfo = {
   path: null,
@@ -56,6 +61,11 @@ const editor = new NoteEditor($("#editor"), changed, (file) => {
     .catch((e) => notify(String(e), true))
     .finally(() => (pasteTask = null));
 });
+editor.reportError = (message) => notify(message, true);
+const formats = formattingCommands(editor);
+installEditorContextMenu(editor, formats);
+localStorage.removeItem("daily-notes-editor");
+$("#format-note").onclick = () => showFormatting(editor, formats);
 const palette = new Palette($<HTMLDialogElement>("#palette"));
 const searchPanel = new SearchPanel(
   $("#search-panel"),
@@ -174,6 +184,7 @@ async function loadDay(day: string, skipFlush = false) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
   if (!skipFlush) await flush();
   loading = true;
+  let loaded = false;
   $<HTMLButtonElement>("#previous-day").disabled = true;
   $<HTMLButtonElement>("#next-day").disabled = true;
   editor.editable(false);
@@ -184,6 +195,7 @@ async function loadDay(day: string, skipFlush = false) {
           ...note,
           day,
           body: "",
+          content: null,
           revision: 0,
           attachments: [],
           archived: false,
@@ -198,16 +210,17 @@ async function loadDay(day: string, skipFlush = false) {
       : ([null, null] as [null, null]);
     note = next;
     neighbors = adjacent;
-    editor.load(note, urls);
+    editor.load(note, urls, info.id);
     editVersion++;
     savedVersion = editVersion;
     await refreshBookmarkLabels();
     renderDate();
     updateCount();
     setSaveState(note.revision ? "All changes saved" : "Ready when you are");
+    loaded = true;
   } finally {
     loading = false;
-    editor.editable(Boolean(info.id) || !desktop);
+    editor.editable(loaded && (Boolean(info.id) || !desktop));
     renderDate();
   }
 }
@@ -375,6 +388,7 @@ const commands: Command[] = [
       if (await ensureLibrary()) await collections.edit();
     },
   },
+  ...formats,
   ...toolCommands(editor, () => editVersion),
   {
     id: "settings",
@@ -516,8 +530,9 @@ document.addEventListener("click", (e) => {
   const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
   if (a) {
     e.preventDefault();
+    if (a.closest(".tiptap") && !e.metaKey && !e.ctrlKey) return;
     const url = a.getAttribute("href") ?? "";
-    if (/^https?:\/\//.test(url))
+    if (/^(https?:\/\/|mailto:)/i.test(url))
       void openUrl(url).catch((err) => notify(String(err), true));
   }
 });
