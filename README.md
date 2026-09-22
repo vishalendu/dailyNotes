@@ -112,4 +112,6 @@ The frontend modules live in `src/`; desktop storage, library management, image 
 
 **Contributor:** OpenAI Codex, an AI coding assistant, contributed to implementation, testing, and documentation.
 
+For writing controls, font fallbacks, and keyboard shortcuts, see the [User Guide](docs/user-guide.md).
+
 Developer text utilities are inspired by [Boop](https://github.com/IvanMathy/Boop). The app uses its own implementations of these utilities. The notepad icon was generated with OpenAI image generation; its prompt is recorded in `assets/icon-prompt.md`.
